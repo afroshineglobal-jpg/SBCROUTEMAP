@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Route Visualizer —  SBC GPS Tracker Dashboard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0;}
+  :root{
+    --bg:#0f1117;--surface:#181c27;--surface2:#1e2335;--border:#2a3050;
+    --text:#e8eaf0;--muted:#7880a0;--accent:#4f8ef7;
+    --green:#2ecc8a;--amber:#f0a030;--red:#f05050;--radius:10px;
+  }
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow:hidden;}
+  header{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--surface);}
+  .logo{width:30px;height:30px;border-radius:7px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;}
+  header h1{font-size:14px;font-weight:600;}
+  header span{font-size:11px;color:var(--muted);}
+
+  #auth-bar{display:flex;align-items:center;gap:8px;padding:7px 20px;background:var(--surface);border-bottom:1px solid var(--border);font-size:12px;}
+  .auth-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0;transition:background 0.3s;}
+  .auth-dot.ok{background:var(--green);}
+  .auth-dot.fail{background:var(--red);}
+  #auth-label{color:var(--muted);}
+  .btn-sm{background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:3px 10px;font-size:11px;cursor:pointer;margin-left:auto;transition:all 0.2s;}
+  .btn-sm:hover{color:var(--text);border-color:var(--accent);}
+
+  .url-bar{display:flex;gap:8px;align-items:center;padding:10px 20px;background:var(--surface);border-bottom:1px solid var(--border);}
+  .url-bar input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;font-family:'DM Mono',monospace;font-size:11px;color:var(--text);outline:none;transition:border 0.2s;}
+  .url-bar input:focus{border-color:var(--accent);}
+  .url-bar input::placeholder{color:var(--muted);}
+  .btn{background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:8px 18px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;transition:opacity 0.2s;}
+  .btn:hover{opacity:0.85;}
+  .btn:disabled{opacity:0.4;cursor:not-allowed;}
+
+  #status{display:none;padding:8px 20px;font-size:12px;color:var(--muted);background:var(--surface);border-bottom:1px solid var(--border);}
+  #status.error{color:var(--red);}
+
+  .main{display:flex;height:calc(100vh - 125px);}
+
+  .sidebar{width:310px;flex-shrink:0;overflow-y:auto;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;}
+  .sidebar::-webkit-scrollbar{width:3px;}
+  .sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+
+  .section-title{font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);padding:12px 14px 7px;}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:0 10px 10px;}
+  .stat{background:var(--surface2);border-radius:8px;padding:9px 11px;border:1px solid var(--border);}
+  .stat-val{font-size:16px;font-weight:600;margin-bottom:1px;}
+  .stat-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;}
+
+  .stop-item{display:flex;align-items:flex-start;gap:9px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.15s;}
+  .stop-item:hover{background:var(--surface2);}
+  .stop-num{width:22px;height:22px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;margin-top:1px;}
+  .stop-info{flex:1;min-width:0;}
+  .stop-name{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .stop-meta{font-size:10px;color:var(--muted);margin-top:1px;}
+  .badge{display:inline-block;font-size:9px;font-weight:600;padding:1px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:0.04em;margin-top:3px;}
+  .badge-red{background:rgba(240,80,80,0.15);color:#f08080;}
+  .badge-green{background:rgba(46,204,138,0.15);color:#2ecc8a;}
+  .badge-amber{background:rgba(240,160,48,0.15);color:#f0a030;}
+  .badge-blue{background:rgba(79,142,247,0.15);color:#4f8ef7;}
+
+  #map{flex:1;}
+
+  .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;gap:8px;color:var(--muted);font-size:12px;text-align:center;padding:20px;}
+
+  /* Custom marker styles */
+  .map-pin{display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);font-size:10px;font-weight:700;color:white;cursor:pointer;}
+  .pin-unvisited{position:relative;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">R</div>
+  <h1>Route Visualizer <span>— SBC-GPS Tracker Dashboard</span></h1>
+</header>
+
+<div id="auth-bar">
+  <div class="auth-dot" id="authDot"></div>
+  <span id="auth-label">Connecting as <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="f2909b9f9396b2829b9e95809b9f819394809b9193dc919d9f">[email&#160;protected]</a>...</span>
+  <button class="btn-sm" onclick="authenticate()">Re-login</button>
+</div>
+
+<div class="url-bar">
+  <input type="text" id="urlInput"
+    placeholder="https://ptm.pilot-gps.africa/backend/public/dashboard/tasks/points?id=7988&page=1&start=0&limit=1000"/>
+  <button class="btn" id="loadBtn" onclick="loadRoute()" disabled>Load Route</button>
+</div>
+
+<div id="status"></div>
+
+<div class="main">
+  <div class="sidebar" id="sidebar">
+    <div class="empty">Waiting for login...<br/>Then paste a task URL above.</div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+
+// ══════════════════════════════════════════
+//  CONFIG
+// ══════════════════════════════════════════
+const BASE_URL = 'https://ptm.pilot-gps.africa/backend/public';
+const EMAIL    = 'bimad@pilgrimsafrica.com';
+const PASSWORD = 'Semantics@99';
+const LOGIN_ENDPOINTS = ['/auth/login','/user/login','/login','/api/login','/api/auth/login'];
+
+let authToken = null;
+let map, markersLayer, routeLayer;
+
+// ── INIT MAP ──────────────────────────────
+map = L.map('map',{zoomControl:true}).setView([6.6,3.3],12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'© <a href="https://openstreetmap.org">OpenStreetMap</a>',maxZoom:19
+}).addTo(map);
+markersLayer = L.layerGroup().addTo(map);
+routeLayer   = L.layerGroup().addTo(map);
+
+// ── AUTH ──────────────────────────────────
+async function authenticate(){
+  setAuthStatus('Authenticating...',null);
+  for(const ep of LOGIN_ENDPOINTS){
+    try{
+      const res = await fetch(BASE_URL+ep,{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Accept':'application/json'},
+        credentials:'include',
+        body:JSON.stringify({email:EMAIL,password:PASSWORD})
+      });
+      if(!res.ok) continue;
+      const d = await res.json();
+      const token = d.token||d.access_token||d.accessToken
+                   ||d?.data?.token||d?.data?.access_token
+                   ||d?.result?.token||d?.user?.token;
+      if(token){
+        authToken=token;
+        setAuthStatus(`Logged in as ${EMAIL}`,true);
+        document.getElementById('loadBtn').disabled=false;
+        return;
+      }
+      if(d.success!==false){
+        authToken='session';
+        setAuthStatus(`Logged in as ${EMAIL}`,true);
+        document.getElementById('loadBtn').disabled=false;
+        return;
+      }
+    }catch(e){continue;}
+  }
+  // Let user try anyway (may be session-based from browser)
+  authToken='session';
+  setAuthStatus(`Auto-login uncertain — try loading a route`,false);
+  document.getElementById('loadBtn').disabled=false;
+}
+
+// ── LOAD ──────────────────────────────────
+async function loadRoute(){
+  let url = document.getElementById('urlInput').value.trim();
+  if(!url){setStatus('Please enter a URL.',true);return;}
+  if(!url.startsWith('http')) url='https://'+url;
+  setStatus('Fetching route data...');
+  document.getElementById('loadBtn').disabled=true;
+  try{
+    const headers={'Accept':'application/json'};
+    if(authToken && authToken!=='session') headers['Authorization']=`Bearer ${authToken}`;
+    const res = await fetch(url,{headers,credentials:'include'});
+    if(res.status===401){
+      setStatus('Session expired — re-authenticating...');
+      await authenticate();
+      setStatus('Please click Load Route again.');
+      document.getElementById('loadBtn').disabled=false;
+      return;
+    }
+    if(!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    const data = await res.json();
+    if(data.success===false) throw new Error('API returned success:false');
+    await renderRoute(data);
+    setStatus('');
+  }catch(err){
+    setStatus(`Error: ${err.message}`,true);
+    console.error(err);
+  }
+  document.getElementById('loadBtn').disabled=false;
+}
+
+// ── ROAD ROUTE via OSRM ───────────────────
+async function getRoadRoute(coords){
+  // OSRM accepts max ~100 waypoints; batch if needed
+  const coordStr = coords.map(c=>c[1]+','+c[0]).join(';');
+  const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+  try{
+    const res = await fetch(url,{signal:AbortSignal.timeout(8000)});
+    if(!res.ok) return null;
+    const data = await res.json();
+    if(data.code==='Ok' && data.routes[0]){
+      return data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
+    }
+  }catch(e){console.warn('OSRM failed:',e.message);}
+  return null;
+}
+
+// ── RENDER ────────────────────────────────
+async function renderRoute(data){
+  const items = data.items||[];
+  if(!items.length){setStatus('No stops found.',true);return;}
+
+  markersLayer.clearLayers();
+  routeLayer.clearLayers();
+
+  const coords = items.map(i=>[parseFloat(i.lat),parseFloat(i.lon)]);
+
+  // Try to get road-following route
+  setStatus('Drawing road route...');
+  const roadCoords = await getRoadRoute(coords);
+  if(roadCoords && roadCoords.length>1){
+    L.polyline(roadCoords,{color:'#4f8ef7',weight:4,opacity:0.65}).addTo(routeLayer);
+  } else {
+    // Fallback: straight dashed line
+    L.polyline(coords,{color:'#4f8ef7',weight:3,opacity:0.5,dashArray:'7,5'}).addTo(routeLayer);
+  }
+
+  map.fitBounds(L.latLngBounds(coords),{padding:[40,40]});
+
+  // Summary stats
+  let totalDist=0,totalDur=0,visited=0,missed=0;
+  items.forEach((item,i)=>{
+    totalDist+=item.fact_distance||0;
+    totalDur +=item.fact_duration||0;
+    if(i>0 && item.subtype!=='base'){item.time_in?visited++:missed++;}
+  });
+
+  // Sidebar
+  let html=`
+  <div class="section-title">Trip Summary</div>
+  <div class="stats">
+    <div class="stat"><div class="stat-val" style="color:var(--accent)">${totalDist.toFixed(1)}<span style="font-size:11px;font-weight:400"> km</span></div><div class="stat-lbl">Distance</div></div>
+    <div class="stat"><div class="stat-val" style="color:var(--green)">${fmtDur(totalDur)}</div><div class="stat-lbl">Active Time</div></div>
+    <div class="stat"><div class="stat-val" style="color:var(--green)">${visited}</div><div class="stat-lbl">Visited</div></div>
+    <div class="stat"><div class="stat-val" style="color:var(--red)">${missed}</div><div class="stat-lbl">Missed</div></div>
+  </div>
+  <div class="section-title">Stops (${items.length})</div>`;
+
+  items.forEach((item,i)=>{
+    const lat   = parseFloat(item.lat);
+    const lon   = parseFloat(item.lon);
+    const color = getColor(item,i);
+    const type  = getType(item,i);
+    const name  = shortAddr(item.address);
+    const tIn   = fmtTime(item.time_in);
+    const tOut  = fmtTime(item.time_out);
+
+    const badge =
+      type==='unvisited'?`<span class="badge badge-red">Not Visited</span>`:
+      type==='base'     ?`<span class="badge badge-green">Base</span>`:
+      type==='parking'  ?`<span class="badge badge-amber">Long Stop</span>`:
+                         `<span class="badge badge-blue">Visited</span>`;
+
+    const meta=[
+      item.time_in ?`In: ${tIn}`:null,
+      item.time_out?`Out: ${tOut}`:null,
+      item.fact_distance>0?`${item.fact_distance.toFixed(1)} km`:null,
+      item.fact_duration>0?fmtDur(item.fact_duration):null,
+    ].filter(Boolean).join('  ·  ');
+
+    html+=`
+    <div class="stop-item" onclick="flyTo(${lat},${lon},${i})">
+      <div class="stop-num" style="background:${color};color:white;">${i+1}</div>
+      <div class="stop-info">
+        <div class="stop-name" title="${item.address}">${name}</div>
+        <div class="stop-meta">${meta||'—'}</div>
+        ${badge}
+      </div>
+    </div>`;
+
+    // ── MARKER ──
+    let iconHtml;
+    if(type==='unvisited'){
+      // Red teardrop pin with "!" 
+      iconHtml=`
+        <svg width="28" height="38" viewBox="0 0 28 38" xmlns="http://www.w3.org/2000/svg">
+          <path d="M14 1C7.4 1 2 6.4 2 13c0 9.8 12 24 12 24S26 22.8 26 13C26 6.4 20.6 1 14 1z"
+                fill="#f05050" stroke="white" stroke-width="1.5"/>
+          <circle cx="14" cy="12.5" r="6" fill="white"/>
+          <text x="14" y="16.5" text-anchor="middle" font-size="10"
+                font-weight="800" fill="#f05050" font-family="sans-serif">!</text>
+        </svg>`;
+    } else {
+      // Numbered circle pin
+      const sz = type==='base' ? 26 : 22;
+      iconHtml=`
+        <div style="width:${sz}px;height:${sz}px;border-radius:50%;
+             background:${color};border:2.5px solid white;
+             box-shadow:0 2px 6px rgba(0,0,0,0.45);
+             display:flex;align-items:center;justify-content:center;
+             font-size:${sz>22?11:9}px;font-weight:700;color:white;
+             font-family:sans-serif;">${i+1}</div>`;
+    }
+
+    const icon = L.divIcon({
+      html:iconHtml, className:'',
+      iconAnchor: type==='unvisited'?[14,38]:type==='base'?[13,13]:[11,11],
+      popupAnchor: type==='unvisited'?[0,-40]:[0,-14]
+    });
+
+    const popup=`
+      <div style="font-family:sans-serif;min-width:185px;line-height:1.6;">
+        <b style="font-size:13px;">${i+1}. ${name}</b>
+        <div style="font-size:11px;color:#888;margin-bottom:5px;">${item.address}</div>
+        ${item.time_in?`<div style="font-size:11px;">In: <b>${tIn}</b> &nbsp; Out: <b>${tOut}</b></div>`:''}
+        ${item.fact_distance>0?`<div style="font-size:11px;">Distance: <b>${item.fact_distance.toFixed(2)} km</b></div>`:''}
+        ${item.fact_duration>0?`<div style="font-size:11px;">Duration: <b>${fmtDur(item.fact_duration)}</b></div>`:''}
+        ${type==='unvisited'?`<div style="margin-top:6px;padding:4px 8px;background:#fff0f0;border-radius:4px;font-size:11px;color:#c00;font-weight:700;">⚠ PLANNED — NOT VISITED</div>`:''}
+      </div>`;
+
+    L.marker([lat,lon],{icon,zIndexOffset:type==='unvisited'?1000:0})
+      .addTo(markersLayer)
+      .bindPopup(popup);
+  });
+
+  document.getElementById('sidebar').innerHTML=html;
+}
+
+// helper for sz in anchor calc
+function sz(type){return type==='base'?26:22;}
+
+function flyTo(lat,lon,idx){
+  map.flyTo([lat,lon],16,{duration:0.8});
+  setTimeout(()=>{
+    let found=null,minD=999;
+    markersLayer.eachLayer(layer=>{
+      try{
+        const ll=layer.getLatLng();
+        const d=Math.abs(ll.lat-lat)+Math.abs(ll.lng-lon);
+        if(d<minD){minD=d;found=layer;}
+      }catch(e){}
+    });
+    if(found) found.openPopup();
+  },900);
+}
+
+// ── UTILS ─────────────────────────────────
+function getColor(item,i){
+  if(item.subtype==='base') return '#1D9E75';
+  if(!item.time_in && i>0)  return '#f05050';
+  if(item.fact_duration>300)return '#f0a030';
+  return '#1a73e8';
+}
+function getType(item,i){
+  if(item.subtype==='base')       return 'base';
+  if(!item.time_in && i>0)        return 'unvisited';
+  if(item.fact_duration>300)      return 'parking';
+  return 'visit';
+}
+function shortAddr(a){if(!a)return'Unknown';return a.split(',')[0].trim();}
+function fmtDur(s){
+  if(!s)return'—';
+  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;
+  if(h>0)return`${h}h ${m}m`;
+  if(m>0)return`${m}m ${sec}s`;
+  return`${sec}s`;
+}
+function fmtTime(ts){
+  if(!ts)return'—';
+  return new Date(ts*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+}
+function setStatus(msg,isError){
+  const el=document.getElementById('status');
+  el.style.display=msg?'block':'none';
+  el.textContent=msg;
+  el.className=isError?'error':'';
+}
+function setAuthStatus(msg,ok){
+  document.getElementById('auth-label').textContent=msg;
+  const dot=document.getElementById('authDot');
+  dot.className='auth-dot'+(ok===true?' ok':ok===false?' fail':'');
+}
+
+// ══════════════════════════════════════════
+//  AUTO-LOAD FROM URL PARAMETER
+//  When opened as route-visualizer.html?id=8057
+//  it will auto-authenticate and load that trip
+// ══════════════════════════════════════════
+(async function autoLoad() {
+  // First, always authenticate
+  await authenticate();
+
+  // Then check if an ?id= was passed in the URL
+  const params = new URLSearchParams(window.location.search);
+  const tripId = params.get('id');
+  if (!tripId) return; // No ID — user will type manually
+
+  // Build the full API URL using the trip ID
+  const apiUrl = `https://ptm.pilot-gps.africa/backend/public/dashboard/tasks/points?id=${tripId}&page=1&start=0&limit=1000`;
+
+  // Pre-fill the input box so user can see the URL
+  document.getElementById('urlInput').value = apiUrl;
+
+  // Auto-trigger the route load
+  loadRoute();
+})();
+
+</script>
+</body>
+</html>
